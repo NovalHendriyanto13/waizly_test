@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Employees;
 use App\Http\Controllers\AppController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use DB;
 
 use App\Models\Employee;
+use App\Models\SalesEmployee;
 
 class EmployeeController extends AppController {
 
@@ -105,6 +107,52 @@ class EmployeeController extends AppController {
     }
 
     public function getSummary(Request $request) {
+        DB::statement(DB::raw('set @row:=0'));
+        $data = Employee::select([
+                DB::raw('SUM(sales_employee.sales) AS sales'), 
+                'name',
+                DB::raw('@row:=@row+1 as ranking')
+            ])
+            ->join('sales_employee', 'sales_employee.employee_id', 'employee.employee_id')
+            ->groupBy('sales_employee.employee_id')
+            ->orderBy(DB::raw('SUM(sales_employee.sales)'), 'desc')
+            ->take(5)
+            ->get();
         
+        return $this->successResponse($data, 'Top 5 Employee Sales');
+    }
+
+    public function getAvgSalary(Request $request) {
+        $last5Years = date('Y-m-d', strtotime('-5 years'));
+        
+        $data = Employee::where('join_date', '>=', $last5Years)
+            ->avg('salary');
+        
+        return $this->successResponse($data, 'Average Salary last 5 year');
+    }
+
+    public function getAvgSalaryDepartment(Request $request) {
+        $data = Employee::select([
+            DB::raw('AVG(salary) AS avg_salary'), 
+            'department'
+        ])
+        ->groupBy('department')
+        ->get();
+
+        $res = [];
+        foreach($data as $dt) {
+            $employee = Employee::select([
+                'name', 'salary', 'department'
+            ])
+                ->where('salary', '>', $dt->avg_salary)
+                ->where('department', $dt->department)
+                ->get();
+
+            if (!empty($employee)) {
+                $res[] = $employee;
+            }
+        }
+    
+        return $this->successResponse($res, 'Employee more than average per department');   
     }
 }
